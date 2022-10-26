@@ -1,5 +1,7 @@
 const uuid = require("uuid");
+const { validationResult } = require("express-validator");
 
+const getCoordsForAddress = require("../utils/location");
 const HttpError = require("../models/http-error");
 
 const DUMMY_PLACES = [
@@ -34,21 +36,43 @@ function getPlacesByUserId(req, res, next) {
   const userId = req.params.uid;
   const places = DUMMY_PLACES.filter((p) => p.creator === userId);
 
-  if (!places.length) {
+  if (!places || !places.length) {
     next(new HttpError("Couldn't find a places list", 404));
   } else {
     res.json(places);
   }
 }
 
-function createPlace(req, res, next) {
+async function createPlace(req, res, next) {
+  const errors = validationResult(req);
+
+  if (!errors.isEmpty()) {
+    return next(new HttpError("Invalid inputs passed", 422));
+  }
   const { title, description, coordinates, address, creator } = req.body;
+
+  // let coords;
+  // getCoordsForAddress()
+  //   .then((data) => console.log(data, "second this, after 2 seconds"))
+  //   .catch((error) => next(error));
+
+  // console.log(coords, "first this");
+
+  let coords;
+  try {
+    coords = await getCoordsForAddress();
+    console.log(coords, "1");
+  } catch (error) {
+    return next(error);
+  }
+
+  console.log(coords, "2");
 
   const createdPlace = {
     id: uuid.v4(),
     title,
     description,
-    location: coordinates,
+    location: coords,
     address,
     creator,
   };
@@ -59,6 +83,12 @@ function createPlace(req, res, next) {
 }
 
 function updatePlace(req, res, next) {
+  const errors = validationResult(req);
+
+  if (!errors.isEmpty()) {
+    throw new HttpError("Invalid inputs passed", 422);
+  }
+
   const placeID = req.params.pid;
   const { title, description } = req.body;
 
@@ -69,19 +99,17 @@ function updatePlace(req, res, next) {
     next(new HttpError("Couldn't find a place", 404));
   } else {
     DUMMY_PLACES.splice(idx, 1, updatedPlace);
-    res.status(201).json({ place: updatedPlace });
+    res.status(200).json({ place: updatedPlace });
   }
 }
 
 function deletePlace(req, res, next) {
   const placeID = req.params.pid;
-  console.log(placeID);
+
   const idx = DUMMY_PLACES.findIndex((item) => item.id === placeID);
 
-  console.log(idx);
-  console.log(DUMMY_PLACES);
   if (idx === -1) {
-    next(new HttpError("Couldn't find a place", 404));
+    throw new HttpError("Couldn't find a place", 404);
   } else {
     DUMMY_PLACES.splice(idx, 1);
     res.status(200).json({ message: "Success!" });

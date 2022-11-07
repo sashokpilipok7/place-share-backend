@@ -3,6 +3,7 @@ const { validationResult } = require("express-validator");
 
 const getCoordsForAddress = require("../utils/location");
 const HttpError = require("../models/http-error");
+const Place = require("../models/place");
 
 const DUMMY_PLACES = [
   {
@@ -20,27 +21,45 @@ const DUMMY_PLACES = [
   },
 ];
 
-function getPlaceById(req, res, next) {
-  console.log("GET REQUEST IN PLACES WORKS FINE");
+async function getPlaceById(req, res, next) {
   const placeID = req.params.pid;
-  const place = DUMMY_PLACES.find((p) => p.id === placeID);
+
+  try {
+    var place = await Place.findById(placeID);
+  } catch (err) {
+    const error = new HttpError(
+      "Something went wront, could not find a place",
+      500
+    );
+    return next(error);
+  }
 
   if (!place) {
-    throw new HttpError("Couldn't find a place", 404);
-  } else {
-    res.json({ place });
+    const error = new HttpError("Couldn't find a place", 404);
+    return next(error);
   }
+  res.json({ place: place.toObject({ getters: true }) });
 }
 
-function getPlacesByUserId(req, res, next) {
+async function getPlacesByUserId(req, res, next) {
   const userId = req.params.uid;
-  const places = DUMMY_PLACES.filter((p) => p.creator === userId);
+
+  try {
+    var places = await Place.find({ creator: userId });
+  } catch (err) {
+    const error = new HttpError(
+      "Something went wront, could not find a place list",
+      500
+    );
+    return next(error);
+  }
 
   if (!places || !places.length) {
-    next(new HttpError("Couldn't find a places list", 404));
-  } else {
-    res.json(places);
+    return next(
+      new HttpError("Couldn't find a place list for the provided id", 404)
+    );
   }
+  res.json({ places: places.map((item) => item.toObject({ getters: true })) });
 }
 
 async function createPlace(req, res, next) {
@@ -68,16 +87,22 @@ async function createPlace(req, res, next) {
 
   console.log(coords, "2");
 
-  const createdPlace = {
-    id: uuid.v4(),
+  const createdPlace = new Place({
     title,
     description,
-    location: coords,
+    imageUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/d/d5/%D0%86%D0%BD%D0%B4%D1%83%D1%81%D1%82%D1%80%D1%96%D0%B0%D0%BB%D1%8C%D0%BD%D0%B8%D0%B9_%D0%BA%D0%BE%D0%BB%D0%B5%D0%B4%D0%B6.jpg",
     address,
+    location: coords,
     creator,
-  };
+  });
 
-  DUMMY_PLACES.push(createdPlace); // or unshift(createdPlace)
+  try {
+    await createdPlace.save();
+  } catch (err) {
+    const error = new HttpError("Creating place failed, please try again", 500);
+    return next(error);
+  }
 
   res.status(201).json({ place: createdPlace });
 }

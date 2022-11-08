@@ -1,25 +1,10 @@
-const uuid = require("uuid");
+const { default: mongoose } = require("mongoose");
 const { validationResult } = require("express-validator");
 
 const getCoordsForAddress = require("../utils/location");
 const HttpError = require("../models/http-error");
 const Place = require("../models/place");
-
-const DUMMY_PLACES = [
-  {
-    id: "p1",
-    imageUrl:
-      "https://upload.wikimedia.org/wikipedia/commons/d/d5/%D0%86%D0%BD%D0%B4%D1%83%D1%81%D1%82%D1%80%D1%96%D0%B0%D0%BB%D1%8C%D0%BD%D0%B8%D0%B9_%D0%BA%D0%BE%D0%BB%D0%B5%D0%B4%D0%B6.jpg",
-    title: "Кам'янець-Подільський індустріальний ",
-    description: "державний вищий навчальний заклад у Кам'янці-Подільському",
-    address: "вулиця Суворова, 17, Кам'янець-Подільський",
-    creator: "u1",
-    location: {
-      lat: 48.686041877319035,
-      lng: 26.571066315655322,
-    },
-  },
-];
+const User = require("../models/user");
 
 async function getPlaceById(req, res, next) {
   const placeID = req.params.pid;
@@ -97,9 +82,28 @@ async function createPlace(req, res, next) {
     creator,
   });
 
+  let user;
   try {
-    await createdPlace.save();
+    user = await User.findById(creator);
   } catch (err) {
+    const error = new HttpError("Creating place failed, please try again", 500);
+    return next(error);
+  }
+
+  if (!user) {
+    const error = new HttpError("Could not find a user for provided id", 404);
+    return next(error);
+  }
+
+  try {
+    const sess = await mongoose.startSession();
+    sess.startTransaction();
+    await createdPlace.save({ session: sess });
+    user.places.push(createdPlace);
+    await user.save({ session: sess });
+    await sess.commitTransaction();
+  } catch (err) {
+    console.log(err);
     const error = new HttpError("Creating place failed, please try again", 500);
     return next(error);
   }
@@ -107,38 +111,70 @@ async function createPlace(req, res, next) {
   res.status(201).json({ place: createdPlace });
 }
 
-function updatePlace(req, res, next) {
+async function updatePlace(req, res, next) {
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
-    throw new HttpError("Invalid inputs passed", 422);
+    return next(new HttpError("Invalid inputs passed", 422));
   }
 
   const placeID = req.params.pid;
   const { title, description } = req.body;
 
-  const idx = DUMMY_PLACES.findIndex((item) => item.id === placeID);
-  const updatedPlace = { ...DUMMY_PLACES[idx], title, description };
-
-  if (idx === -1) {
-    next(new HttpError("Couldn't find a place", 404));
-  } else {
-    DUMMY_PLACES.splice(idx, 1, updatedPlace);
-    res.status(200).json({ place: updatedPlace });
+  let place;
+  try {
+    place = await Place.findById(placeID);
+  } catch (err) {
+    const error = new HttpError("Could not update a place", 500);
+    return next(error);
   }
+
+  place.title = title;
+  place.description = description;
+
+  try {
+    await place.save();
+  } catch (err) {
+    const error = new HttpError("Could not update a place", 500);
+    return next(error);
+  }
+
+  res.status(200).json({ place: place.toObject({ getters: true }) });
 }
 
-function deletePlace(req, res, next) {
+async function deletePlace(req, res, next) {
   const placeID = req.params.pid;
 
-  const idx = DUMMY_PLACES.findIndex((item) => item.id === placeID);
-
-  if (idx === -1) {
-    throw new HttpError("Couldn't find a place", 404);
-  } else {
-    DUMMY_PLACES.splice(idx, 1);
-    res.status(200).json({ message: "Success!" });
+  let place;
+  try {
+    place = await Place.findById(placeID).populate("creator");
+  } catch (err) {
+    const error = new HttpError(
+      "Something went wrong, could not delete a place"
+    );
+    return next(error);
   }
+
+  if (!place) {
+    const error = new HttpError("Could not find a place", 404);
+    return next(error);
+  }
+
+  try {
+    const sess = await mongoose.startSession();
+    sess.startTransaction();
+    await place.remove({ session: sess });
+    place.creator.places.pull(place);
+    await place.creator.save({ session: sess });
+    await sess.commitTransaction();
+  } catch (err) {
+    const error = new HttpError(
+      "Something went wrong, could not delete a place"
+    );
+    return next(error);
+  }
+
+  res.status(200).json({ message: "Success!" });
 }
 
 exports.getPlaceById = getPlaceById;

@@ -76,7 +76,10 @@ async function logIn(req, res, next) {
     return next(error);
   }
 
-  res.json({ message: "Logged in" });
+  res.json({
+    message: "Logged in",
+    user: existingUser.toObject({ getters: true }),
+  });
 }
 
 exports.getUsersList = getUsersList;

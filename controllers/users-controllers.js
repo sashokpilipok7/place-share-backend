@@ -41,8 +41,7 @@ async function signUp(req, res, next) {
   const createdUser = new User({
     name,
     email,
-    image:
-      "https://www.pngmart.com/files/22/User-Avatar-Profile-PNG-Isolated-Transparent-Picture.png",
+    image: req.file.path,
     password,
   });
 

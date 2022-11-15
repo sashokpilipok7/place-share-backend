@@ -1,3 +1,4 @@
+const fs = require("fs");
 const { default: mongoose } = require("mongoose");
 const { validationResult } = require("express-validator");
 
@@ -71,12 +72,11 @@ async function createPlace(req, res, next) {
   }
 
   console.log(coords, "2");
-
+  console.log(req);
   const createdPlace = new Place({
     title,
     description,
-    imageUrl:
-      "https://upload.wikimedia.org/wikipedia/commons/d/d5/%D0%86%D0%BD%D0%B4%D1%83%D1%81%D1%82%D1%80%D1%96%D0%B0%D0%BB%D1%8C%D0%BD%D0%B8%D0%B9_%D0%BA%D0%BE%D0%BB%D0%B5%D0%B4%D0%B6.jpg",
+    imageUrl: req.file.path,
     address,
     location: coords,
     creator,
@@ -160,6 +160,8 @@ async function deletePlace(req, res, next) {
     return next(error);
   }
 
+  const imagePath = place.imageUrl;
+
   try {
     const sess = await mongoose.startSession();
     sess.startTransaction();
@@ -173,6 +175,8 @@ async function deletePlace(req, res, next) {
     );
     return next(error);
   }
+
+  fs.unlink(imagePath, (err) => console.log(err));
 
   res.status(200).json({ message: "Success!" });
 }
